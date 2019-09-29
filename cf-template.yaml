@@ -61,57 +61,78 @@ Resources:
     Properties:
       Code:
         ZipFile: |
-          import json  
-          import boto3  
-          import os
-          from datetime import datetime
+           import json
+           import boto3
+           import os
+           from datetime import datetime
 
-          def lambda_handler(event, context):
-             candidate = event['candidate']
-             response = event['response']
-             dateTimeObj = datetime.now()
-             strDateTime = dateTimeObj.isoformat(sep=' ', timespec='milliseconds')
+           def get_sentiment(response):
+               keys = ['POSITIVE','NEGATIVE','NEUTRAL','MIXED']
+               upperres = response.upper()
+               reslist = upperres.split(" ")
+               sentiment = list(set(reslist) & set(keys))
+               if len(sentiment) > 0:
+                   sentiment = sentiment[0]
+               else:
+                   sentiment = "NEUTRAL"
 
-             candidateRecord = {}
-             candidateRecord['candidate'] = candidate
-             candidateRecord['sentiment'] = 'NEUTRAL'
-             candidateRecord['datetime'] = strDateTime
+               return str(sentiment)
 
-             recordBytes = json.dumps(candidateRecord).encode('utf-8')
+           def lambda_handler(event, context):
+              candidate = event['candidate']
+              response = event['response']
+              dateTimeObj = datetime.now()
+              strDateTime = dateTimeObj.isoformat(sep=' ', timespec='milliseconds')
+              sentiment = get_sentiment(response)
 
-             print(candidate)
-             print(response)
-             print(dateTimeObj)
 
-             client = boto3.client('cloudwatch')
+              candidateRecord = {}
+              candidateRecord['candidate'] = candidate
+              candidateRecord['sentiment'] = sentiment
+              candidateRecord['datetime'] = strDateTime
 
-             metricsResp = client.put_metric_data(
-               Namespace='NewStarter',
-               MetricData=[
-                {
-                    'MetricName': 'Sentiment',
-                    'Timestamp': dateTimeObj,
-                    'Values': [
-                        1.0,
-                    ],
-                    'Counts': [
-                        1.0,
-                    ],
-                    'Unit': 'Count',
-                    'StorageResolution': 1
-                 },
-               ]
-             )
+              recordBytes = json.dumps(candidateRecord).encode('utf-8')
 
-             fhClient = boto3.client('firehose')
+              print(candidate)
+              print(response)
+              print(sentiment)
+              print(dateTimeObj)
 
-             response = fhClient.put_record(
-               DeliveryStreamName='NewStarterDeliveryStream',
-                 Record={
-                   'Data': recordBytes
-                 }
-               )
-            
+              client = boto3.client('cloudwatch')
+
+              metricsResp = client.put_metric_data(
+                Namespace='NewStarter',
+                MetricData=[
+                 {
+                     'MetricName': candidate,
+                     'Timestamp': dateTimeObj,
+                     'Dimensions': [
+                           {
+                               'Name': 'sentiment',
+                               'Value': sentiment
+                               },
+                         ],
+                     'Values': [
+                         1.0,
+                     ],
+                     'Counts': [
+                         1.0,
+                     ],
+                     'Unit': 'Count',
+                     'StorageResolution': 1
+                  },
+                ]
+              )
+
+              fhClient = boto3.client('firehose')
+
+              response = fhClient.put_record(
+                DeliveryStreamName='NewStarterDeliveryStream',
+                  Record={
+                    'Data': recordBytes
+                  }
+                )
+
       Description: Sentiment function tech challenge
       Handler: index.lambda_handler
       MemorySize: 128
