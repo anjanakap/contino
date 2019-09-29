@@ -1,6 +1,6 @@
 # contino
 
-##Cloudformation deployment steps
+## Cloudformation deployment steps
 - Install AWS CLI
 ``` aws configure ```
 - Create a Bucket 
@@ -13,7 +13,7 @@
 > Waiting for stack create/update to complete
 > Successfully created/updated stack - testsydney4
 
-##Update Lambda Function to capture sentiment
+## Update Lambda Function to capture sentiment
 ```
 def get_sentiment(response):
     keys = ['POSITIVE','NEGATIVE','MIXED']
@@ -30,7 +30,7 @@ def get_sentiment(response):
  - This function will check the sentiment key words and return the sentiment word if found one, otherwise default to NEUTRAL. 
  - If there is more than one sentiment then first in the list considered as the sentiment 
 
-##Update Lambda to Send the Sentiment
+## Update Lambda to Send the Sentiment
 ```
  metricsResp = client.put_metric_data(
      Namespace='NewStarter',
@@ -85,7 +85,7 @@ def get_sentiment(response):
 
 - Sample metric details are posted above
 
-##Athena Query issue
+## Athena Query issue
 It was identified that Athna was having issues to retrieve data due to the Glue table was not paritioned properly. While there many ways to address the issue, I've created quick shell script the create the missing paritions. 
 ```
 #!/bin/bash
@@ -110,7 +110,7 @@ IFS=$OLD_IFS
 ```
 **There are much better ways to handle this, such as creating a lambda function to trigger when content created in the S3 bucket, went with quick dirty for the timebeing**
 
-#Testing 
+# Testing 
 ```
 Execution log for request 706ba1a8-fe24-462b-9e27-922a33cdc2d9
 Sun Sep 29 09:24:34 UTC 2019 : Starting execution for request: 706ba1a8-fe24-462b-9e27-922a33cdc2d9
