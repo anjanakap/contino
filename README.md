@@ -12,3 +12,19 @@
 > Waiting for changeset to be created..
 > Waiting for stack create/update to complete
 > Successfully created/updated stack - testsydney4
+
+**Update Lambda Function to capture sentiment**
+```
+def get_sentiment(response):
+    keys = ['POSITIVE','NEGATIVE','MIXED']
+    upperres = response.upper()
+    reslist = upperres.split(" ")
+    sentiment = list(set(reslist) & set(keys))
+    if len(sentiment) > 0:
+        sentiment = sentiment[0]
+    else:
+        sentiment = "NEUTRAL"
+        
+    return str(sentiment)```
+ - This function will check the sentiment key words and return the sentiment word if found one, otherwise default to NEUTRAL. 
+ - If there is more than one sentiment then first in the list considered as the sentiment 
