@@ -25,6 +25,6 @@ def get_sentiment(response):
     else:
         sentiment = "NEUTRAL"
         
-    return str(sentiment)```
+    return str(sentiment) ```
  - This function will check the sentiment key words and return the sentiment word if found one, otherwise default to NEUTRAL. 
  - If there is more than one sentiment then first in the list considered as the sentiment 
