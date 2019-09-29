@@ -342,9 +342,26 @@ Resources:
       DashboardName: New-Starter-Dashboard
       DashboardBody: >-
         { "widgets": [ { "type": "metric", "x": 0, "y": 0, "width": 24,
-        "height": 6, "properties": { "metrics": [ [ "NewStarter", "Sentiment", {
-        "period": 60, "id": "m3", "stat": "SampleCount" } ] ], "view":
-        "timeSeries", "stacked": false, "region": "ap-southeast-2", "start":
-        "-PT1H", "end": "P0D", "title": "Sentiment API Volume of Calls" } } ] }
+        "height": 6, "properties": {
+                                       "metrics": [
+                                           [ "NewStarter", "candicate", "sentiment", "MIXED", { "stat": "SampleCount", "period": 60 } ],
+                                           [ "...", "NEGATIVE", { "stat": "SampleCount", "period": 60 } ],
+                                           [ "...", "NEUTRAL", { "stat": "SampleCount", "period": 60 } ],
+                                           [ "...", "POSITIVE", { "stat": "SampleCount", "period": 60 } ]
+                                       ],
+                                       "view": "timeSeries",
+                                       "stacked": false,
+                                       "region": "us-east-2",
+                                       "liveData": true,
+                                       "legend": {
+                                           "position": "right"
+                                       },
+                                       "yAxis": {
+                                           "left": {
+                                               "showUnits": true
+                                           }
+                                       },
+                                       "period": 300
+                                   } } ] }
 
 
