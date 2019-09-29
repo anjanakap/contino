@@ -1,0 +1,329 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  BucketName:
+    Type: String
+Resources:
+  SentimentAPI:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: SentimentAPI
+  CandidateResponse:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref SentimentAPI
+      ParentId: !GetAtt 
+        - SentimentAPI
+        - RootResourceId
+      PathPart: response
+  POSTMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      ResourceId: !Ref CandidateResponse
+      RestApiId: !Ref SentimentAPI
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      RequestModels:
+        application/json: !Ref SentimentModel
+      MethodResponses:
+        - ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+            method.response.header.Location: true
+          StatusCode: 200
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Join 
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - SentimentFunction
+              - Arn
+            - /invocations
+        IntegrationResponses:
+          - ResponseTemplates:
+              application/json: '{}'
+            ResponseParameters:
+              method.response.header.Location: integration.response.body.headers.uid
+            StatusCode: 200
+        PassthroughBehavior: NEVER
+        RequestTemplates:
+          application/json: >-
+            { "candidate": $input.json('candidate'), "response":
+            $input.json('response') }
+  SentimentFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: |
+          import json  
+          import boto3  
+          import os
+          from datetime import datetime
+
+          def lambda_handler(event, context):
+             candidate = event['candidate']
+             response = event['response']
+             dateTimeObj = datetime.now()
+             strDateTime = dateTimeObj.isoformat(sep=' ', timespec='milliseconds')
+
+             candidateRecord = {}
+             candidateRecord['candidate'] = candidate
+             candidateRecord['sentiment'] = 'NEUTRAL'
+             candidateRecord['datetime'] = strDateTime
+
+             recordBytes = json.dumps(candidateRecord).encode('utf-8')
+
+             print(candidate)
+             print(response)
+             print(dateTimeObj)
+
+             client = boto3.client('cloudwatch')
+
+             metricsResp = client.put_metric_data(
+               Namespace='NewStarter',
+               MetricData=[
+                {
+                    'MetricName': 'Sentiment',
+                    'Timestamp': dateTimeObj,
+                    'Values': [
+                        1.0,
+                    ],
+                    'Counts': [
+                        1.0,
+                    ],
+                    'Unit': 'Count',
+                    'StorageResolution': 1
+                 },
+               ]
+             )
+
+             fhClient = boto3.client('firehose')
+
+             response = fhClient.put_record(
+               DeliveryStreamName='NewStarterDeliveryStream',
+                 Record={
+                   'Data': recordBytes
+                 }
+               )
+            
+      Description: Sentiment function tech challenge
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 5
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'firehose:*'
+                Resource: !GetAtt S3Delivery.Arn
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: '*'
+  SentimentPerms:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:invokeFunction'
+      FunctionName: !Ref SentimentFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Join':
+          - ''
+          - - 'arn:aws:execute-api:'
+            - Ref: 'AWS::Region'
+            - ':'
+            - Ref: 'AWS::AccountId'
+            - ':'
+            - !Ref SentimentAPI
+            - /*/POST/response
+    DependsOn:
+      - APIDeployment
+  APIDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    Properties:
+      RestApiId: !Ref SentimentAPI
+      StageName: v1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: f3d7182f-d2bf-46be-8fbd-cc1882fed8dd
+    DependsOn:
+      - POSTMethod
+      - SentimentModel
+      - SentimentAPI
+      - SentimentFunction
+  S3Delivery:
+    Type: 'AWS::KinesisFirehose::DeliveryStream'
+    Properties:
+      DeliveryStreamName: NewStarterDeliveryStream
+      ExtendedS3DestinationConfiguration:
+        CompressionFormat: UNCOMPRESSED
+        BucketARN: !GetAtt NewStarterDatalake.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1
+        Prefix: data/
+        RoleARN: !GetAtt FirehoseRole.Arn
+        ErrorOutputPrefix: error/
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: /aws/kinesisfirehose/NewStarterDeliveryStream
+          LogStreamName: S3Delivery
+  NewStarterDatalake:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  NewStarterSentiment:
+    Type: 'AWS::Glue::Table'
+    Properties:
+      CatalogId: !Ref 'AWS::AccountId'
+      DatabaseName: !Ref NewStarterGlueDB
+      TableInput:
+        Name: 'newstartersentiment'
+        Parameters:
+          classification: json
+        PartitionKeys:
+          - Name: yearmonthdayhour
+            Type: string
+        StorageDescriptor:
+          Location: !Join 
+            - ''
+            - - 's3://'
+              - !Ref NewStarterDatalake
+              - /data/
+          Columns:
+            - Name: candidate
+              Type: string
+            - Name: sentiment
+              Type: string
+            - Name: datetime
+              Type: timestamp
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: 'candidate,sentiment,datetime'
+  NewStarterGlueDB:
+    Type: 'AWS::Glue::Database'
+    Properties:
+      CatalogId: !Ref 'AWS::AccountId'
+      DatabaseInput:
+        Name: new-starter-db
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 112de66b-9063-452c-ad7b-21c1e89703cb
+  FirehoseRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'kinesis:SubscribeToShard'
+                  - 'kinesis:GetShardIterator'
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:GetRecords'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'glue:GetTables'
+                  - 'glue:GetTableVersions'
+                  - 'glue:GetDatabases'
+                  - 'glue:GetTable'
+                  - 'glue:GetDatabase'
+                  - 'glue:GetTableVersion'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                  - 'lambda:InvokeAsync'
+                  - 'lambda:GetFunctionConfiguration'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                Resource: '*'
+  SentimentModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      RestApiId: !Ref SentimentAPI
+      ContentType: application/json
+      Name: SentimentModel
+      Schema:
+        title: Sentiment
+        type: object
+        properties:
+          candidate:
+            type: string
+          response:
+            type: string
+  SentimentDashboard:
+    Type: 'AWS::CloudWatch::Dashboard'
+    Properties:
+      DashboardName: New-Starter-Dashboard
+      DashboardBody: >-
+        { "widgets": [ { "type": "metric", "x": 0, "y": 0, "width": 24,
+        "height": 6, "properties": { "metrics": [ [ "NewStarter", "Sentiment", {
+        "period": 60, "id": "m3", "stat": "SampleCount" } ] ], "view":
+        "timeSeries", "stacked": false, "region": "ap-southeast-2", "start":
+        "-PT1H", "end": "P0D", "title": "Sentiment API Volume of Calls" } } ] }
+
+
